@@ -1,0 +1,5 @@
+{
+  "name": "goose-intrupt-hook",
+  "version": "0.0.1-beta.1",
+  "description": "Gates high-risk goose tool calls (developer__shell / developer__text_editor) behind a human Slack approval via the intrupt API, denying on reject/timeout/error."
+}
