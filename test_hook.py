@@ -101,8 +101,43 @@ for desc, payload, expect_gated in CASES:
         if result.stderr:
             print(f"       stderr: {result.stderr.strip()}")
 
+# ── Hard-block (AEGMIS_BLOCKED_PATHS) — deny locally, no approval round-trip ──────
+# A hard-blocked rm must BLOCK via exit 2 (goose's block signal; a non-2 exit would
+# be treated as Allow) with a {"decision":"block"} whose reason names
+# AEGMIS_BLOCKED_PATHS, WITHOUT ever contacting the (dead) API.
+HARD_ENV = {**TEST_ENV, "AEGMIS_BLOCKED_PATHS": os.path.expanduser("~/keepsafe")}
+HARD_CASES = [
+    # (description, command, expect_hard_blocked)
+    ("shell — rm of hard-blocked dir (denied locally)",    "rm -rf ~/keepsafe",         True),
+    ("shell — rm of file under hard-blocked dir (denied)", "rm ~/keepsafe/secrets.txt", True),
+    ("shell — rm elsewhere (not hard-blocked)",            "rm -rf ~/other/tmp",        False),
+]
+for desc, cmd, expect_blocked in HARD_CASES:
+    result = subprocess.run(
+        [sys.executable, HOOK],
+        input=json.dumps({"event": "PreToolUse", "cwd": os.path.expanduser("~"),
+                          "tool_name": "developer__shell", "tool_input": {"command": cmd}}),
+        capture_output=True, text=True, env=HARD_ENV,
+    )
+    # Block MUST be exit 2 (goose's block signal); any other non-zero = Allow bug.
+    valid_exit = result.returncode in (0, 2)
+    hard_blocked = result.returncode == 2 and "AEGMIS_BLOCKED_PATHS" in result.stdout
+    ok = valid_exit and (hard_blocked == expect_blocked)
+    status = "PASS" if ok else "FAIL"
+    if ok:
+        pass_count += 1
+    else:
+        fail_count += 1
+    print(f"[{status}] {desc}")
+    if not ok:
+        print(f"       expected hard_blocked={expect_blocked}, got exit={result.returncode} "
+              f"hard_blocked={hard_blocked}")
+        if not valid_exit:
+            print(f"       ⚠️  exit {result.returncode} is neither 0 nor 2 — goose would treat this as ALLOW!")
+        print(f"       stdout: {result.stdout.strip()!r}")
+
 print()
-print(f"Results: {pass_count}/{len(CASES)} passed", end="")
+print(f"Results: {pass_count}/{pass_count + fail_count} passed", end="")
 if fail_count:
     print(f", {fail_count} failed")
     sys.exit(1)
