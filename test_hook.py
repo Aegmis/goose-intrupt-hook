@@ -203,6 +203,27 @@ for desc, payload, expect_gated in PROJECT_CASES:
         if result.stderr:
             print(f"       stderr: {result.stderr.strip()}")
 
+# ── Protected-path WRITE gate (AEGMIS_PROTECTED_PATHS) ───────────────────────────
+PW_DIR = os.path.expanduser("~/proj/secrets")
+PW_ENV = {**TEST_ENV, "AEGMIS_FORWARD_ALL": "false", "AEGMIS_PROTECTED_PATHS": PW_DIR}
+PW_CASES = [
+    ("developer__shell — touch INTO protected (gated)", f"touch {PW_DIR}/x",      True),
+    ("developer__shell — > INTO protected (gated)",     f"echo hi > {PW_DIR}/a",  True),
+    ("developer__shell — touch OUTSIDE (allowed)",      f"touch {os.path.expanduser('~/proj')}/free.txt", False),
+    ("developer__shell — cat READ protected (allowed)", f"cat {PW_DIR}/x",        False),
+]
+for desc, cmd, expect_gated in PW_CASES:
+    result = subprocess.run([sys.executable, HOOK],
+        input=json.dumps({"event": "PreToolUse", "cwd": os.path.expanduser("~/proj"),
+                          "tool_name": "developer__shell", "tool_input": {"command": cmd}}),
+        capture_output=True, text=True, env=PW_ENV)
+    ok = ((result.returncode == 2) == expect_gated) and result.returncode in (0, 2)
+    pass_count += 1 if ok else 0
+    fail_count += 0 if ok else 1
+    print(f"[{'PASS' if ok else 'FAIL'}] {desc}")
+    if not ok:
+        print(f"       expected gated={expect_gated}, got exit={result.returncode}")
+
 print()
 print(f"Results: {pass_count}/{pass_count + fail_count} passed", end="")
 if fail_count:
